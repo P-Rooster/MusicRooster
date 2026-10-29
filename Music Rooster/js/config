@@ -1,0 +1,6 @@
+// Settings → API en tu proyecto de Supabase
+const SUPABASE_URL = "https://ccbapxdtkmiywfeogfyi.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_cUJ6FRM51lkkjwiuTkLmwg_dw0RHhjr";
+
+// Se llama "db" para no chocar con el objeto global window.supabase del CDN
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
