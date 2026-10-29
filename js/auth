@@ -1,0 +1,124 @@
+let usuarioActual = null;
+let perfilActual = null;
+let modoRegistro = false;
+
+const $auth = {
+  vista: document.getElementById("vista-auth"),
+  app: document.getElementById("vista-app"),
+  form: document.getElementById("form-auth"),
+  titulo: document.getElementById("auth-titulo"),
+  registro: document.getElementById("campos-registro"),
+  nombre: document.getElementById("auth-nombre"),
+  avatar: document.getElementById("auth-avatar"),
+  email: document.getElementById("auth-email"),
+  pass: document.getElementById("auth-pass"),
+  msg: document.getElementById("auth-msg"),
+  submit: document.getElementById("auth-submit"),
+  toggle: document.getElementById("auth-toggle"),
+  navAvatar: document.getElementById("nav-avatar"),
+  navNombre: document.getElementById("nav-nombre"),
+  salir: document.getElementById("btn-salir"),
+};
+
+function mensajeAuth(texto, ok = false) {
+  $auth.msg.textContent = texto;
+  $auth.msg.classList.toggle("ok", ok);
+}
+
+function alternarModo() {
+  modoRegistro = !modoRegistro;
+  $auth.registro.hidden = !modoRegistro;
+  $auth.titulo.textContent = modoRegistro ? "Crea tu cuenta" : "Inicia sesión";
+  $auth.submit.textContent = modoRegistro ? "Registrarme" : "Entrar";
+  $auth.toggle.textContent = modoRegistro ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
+  $auth.pass.autocomplete = modoRegistro ? "new-password" : "current-password";
+  mensajeAuth("");
+}
+
+function traducirError(error) {
+  const m = (error.message || "").toLowerCase();
+  if (m.includes("invalid login")) return "Correo o contraseña incorrectos.";
+  if (m.includes("already registered")) return "Ese correo ya está registrado.";
+  if (m.includes("email not confirmed")) return "Confirma tu correo antes de entrar.";
+  if (m.includes("password")) return "La contraseña debe tener al menos 6 caracteres.";
+  if (m.includes("rate limit")) return "Demasiados intentos. Espera un momento.";
+  return error.message;
+}
+
+async function manejarSubmit(e) {
+  e.preventDefault();
+  const email = $auth.email.value.trim();
+  const password = $auth.pass.value;
+  if (!email || password.length < 6) {
+    return mensajeAuth("Ingresa un correo válido y una contraseña de al menos 6 caracteres.");
+  }
+
+  $auth.submit.disabled = true;
+  mensajeAuth("");
+
+  try {
+    if (modoRegistro) {
+      const { data, error } = await db.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            nombre: $auth.nombre.value.trim(),
+            avatar_url: $auth.avatar.value.trim(),
+          },
+        },
+      });
+      if (error) throw error;
+      if (!data.session) mensajeAuth("Cuenta creada. Revisa tu correo para confirmarla.", true);
+    } else {
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    }
+  } catch (err) {
+    mensajeAuth(traducirError(err));
+  } finally {
+    $auth.submit.disabled = false;
+  }
+}
+
+async function cargarPerfil(user) {
+  const { data } = await db.from("perfiles").select("nombre, avatar_url").eq("id", user.id).maybeSingle();
+  return data || { nombre: user.email.split("@")[0], avatar_url: null };
+}
+
+function pintarNavbar() {
+  $auth.navAvatar.replaceChildren(crearAvatar(perfilActual));
+  $auth.navNombre.textContent = perfilActual.nombre;
+}
+
+async function aplicarSesion(session) {
+  const user = session?.user ?? null;
+
+  // Evita repintar si es el mismo usuario (p. ej. al refrescar el token)
+  if (user && usuarioActual && user.id === usuarioActual.id) return;
+
+  if (user) {
+    usuarioActual = user;
+    perfilActual = await cargarPerfil(user);
+    pintarNavbar();
+    $auth.vista.hidden = true;
+    $auth.app.hidden = false;
+    iniciarFeed();
+  } else {
+    usuarioActual = null;
+    perfilActual = null;
+    limpiarFeed();
+    $auth.app.hidden = true;
+    $auth.vista.hidden = false;
+  }
+}
+
+$auth.form.addEventListener("submit", manejarSubmit);
+$auth.toggle.addEventListener("click", alternarModo);
+$auth.salir.addEventListener("click", () => db.auth.signOut());
+
+// Se dispara al cargar (INITIAL_SESSION), al entrar y al salir.
+// setTimeout evita bloqueos al llamar a Supabase dentro del callback.
+db.auth.onAuthStateChange((_evento, session) => {
+  setTimeout(() => aplicarSesion(session), 0);
+});

@@ -1,0 +1,272 @@
+const $feed = document.getElementById("feed");
+const $estado = document.getElementById("feed-estado");
+const $formPublicar = document.getElementById("form-publicar");
+const $pubTitulo = document.getElementById("pub-titulo");
+const $pubUrl = document.getElementById("pub-url");
+const $pubMsg = document.getElementById("pub-msg");
+
+const SELECT_POST = `
+  id, titulo, youtube_id, created_at,
+  perfiles ( nombre, avatar_url ),
+  calificaciones ( usuario_id, estrellas ),
+  comentarios ( id, contenido, created_at, perfiles ( nombre, avatar_url ) )
+`;
+
+/* ---------- Utilidades ---------- */
+function esc(texto) {
+  const d = document.createElement("div");
+  d.textContent = texto ?? "";
+  return d.innerHTML;
+}
+
+function fechaRelativa(iso) {
+  const seg = Math.round((new Date(iso) - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+  const tramos = [["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [unidad, s] of tramos) {
+    if (Math.abs(seg) >= s) return rtf.format(Math.round(seg / s), unidad);
+  }
+  return "justo ahora";
+}
+
+function extraerYoutubeId(url) {
+  try {
+    const u = new URL(url.trim());
+    const host = u.hostname.replace(/^(www|m|music)\./, "");
+    let id = null;
+    if (host === "youtu.be") {
+      id = u.pathname.slice(1).split("/")[0];
+    } else if (host === "youtube.com") {
+      if (u.pathname === "/watch") id = u.searchParams.get("v");
+      else id = u.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]{11})/)?.[1] ?? null;
+    }
+    return id && /^[\w-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+// Avatar con imagen o, si no hay, la inicial del nombre
+function crearAvatar(perfil, pequeno = false) {
+  const clase = "avatar" + (pequeno ? " sm" : "");
+  if (perfil?.avatar_url) {
+    const img = document.createElement("img");
+    img.className = clase;
+    img.src = perfil.avatar_url;
+    img.alt = perfil.nombre || "Avatar";
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => img.replaceWith(crearAvatar({ nombre: perfil.nombre }, pequeno));
+    return img;
+  }
+  const div = document.createElement("div");
+  div.className = clase;
+  div.textContent = (perfil?.nombre || "?").charAt(0).toUpperCase();
+  return div;
+}
+
+/* ---------- Render de tarjeta ---------- */
+function crearTarjeta(post) {
+  const card = document.createElement("article");
+  card.className = "card";
+  card.dataset.id = post.id;
+  card.innerHTML = `
+    <header class="card-head">
+      <span class="slot-avatar"></span>
+      <div><strong>${esc(post.perfiles?.nombre ?? "Usuario")}</strong><small>${fechaRelativa(post.created_at)}</small></div>
+    </header>
+    <h3 class="card-title">${esc(post.titulo)}</h3>
+    <div class="video">
+      <iframe src="https://www.youtube-nocookie.com/embed/${esc(post.youtube_id)}"
+        title="${esc(post.titulo)}" loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>
+    <div class="rating-row">
+      <div class="stars" role="group" aria-label="Calificar de 1 a 5 estrellas"></div>
+      <span class="rating-info"></span>
+    </div>
+    <button class="toggle-comentarios" type="button" aria-expanded="false">
+      <span class="txt-comentarios"></span><span class="flecha">▾</span>
+    </button>
+    <section class="comentarios" hidden>
+      <ul class="lista"></ul>
+      <form class="form-comentario">
+        <input type="text" maxlength="500" placeholder="Escribe un comentario…" required>
+        <button class="btn btn-primario" type="submit">Enviar</button>
+      </form>
+    </section>`;
+  card.querySelector(".slot-avatar").replaceWith(crearAvatar(post.perfiles));
+  pintarDinamico(card, post);
+  return card;
+}
+
+// Actualiza estrellas y comentarios sin recargar el iframe
+function pintarDinamico(card, post) {
+  // Calificación
+  const votos = post.calificaciones ?? [];
+  const promedio = votos.length ? votos.reduce((a, v) => a + v.estrellas, 0) / votos.length : 0;
+  const mio = votos.find((v) => v.usuario_id === usuarioActual?.id)?.estrellas ?? 0;
+  const lleno = mio || Math.round(promedio);
+
+  const contEstrellas = card.querySelector(".stars");
+  contEstrellas.dataset.lleno = lleno;
+  contEstrellas.innerHTML = [1, 2, 3, 4, 5]
+    .map((n) => `<button type="button" class="star${n <= lleno ? " on" : ""}" data-valor="${n}"
+        aria-label="${n} ${n === 1 ? "estrella" : "estrellas"}">★</button>`)
+    .join("");
+
+  card.querySelector(".rating-info").textContent = votos.length
+    ? `${promedio.toFixed(1)} · ${votos.length} ${votos.length === 1 ? "voto" : "votos"}${mio ? ` · Tu voto: ${mio}` : ""}`
+    : "Sin calificaciones";
+
+  // Comentarios
+  const comentarios = [...(post.comentarios ?? [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  card.querySelector(".txt-comentarios").textContent =
+    `💬 ${comentarios.length} ${comentarios.length === 1 ? "comentario" : "comentarios"}`;
+
+  const lista = card.querySelector(".lista");
+  lista.replaceChildren();
+  if (!comentarios.length) {
+    const li = document.createElement("li");
+    li.className = "sin-comentarios";
+    li.textContent = "Sé el primero en comentar.";
+    lista.append(li);
+  }
+  for (const c of comentarios) {
+    const li = document.createElement("li");
+    li.className = "comentario";
+    li.append(crearAvatar(c.perfiles, true));
+    const burbuja = document.createElement("div");
+    burbuja.className = "burbuja";
+    burbuja.innerHTML = `<b>${esc(c.perfiles?.nombre ?? "Usuario")}</b><p>${esc(c.contenido)}</p>`;
+    li.append(burbuja);
+    lista.append(li);
+  }
+  lista.scrollTop = lista.scrollHeight;
+}
+
+/* ---------- Datos ---------- */
+async function obtenerPost(id) {
+  const { data, error } = await db.from("publicaciones").select(SELECT_POST).eq("id", id).single();
+  if (error) throw error;
+  return data;
+}
+
+async function refrescarTarjeta(id) {
+  const card = $feed.querySelector(`.card[data-id="${id}"]`);
+  if (!card) return;
+  pintarDinamico(card, await obtenerPost(id));
+}
+
+async function cargarFeed() {
+  $estado.textContent = "Cargando…";
+  const { data, error } = await db
+    .from("publicaciones")
+    .select(SELECT_POST)
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (error) {
+    $estado.textContent = "No se pudo cargar el feed. Intenta de nuevo.";
+    return console.error(error);
+  }
+  $feed.replaceChildren(...data.map(crearTarjeta));
+  $estado.textContent = data.length ? "" : "Aún no hay publicaciones. ¡Comparte la primera!";
+}
+
+/* ---------- Acciones ---------- */
+async function calificar(postId, valor) {
+  const { error } = await db
+    .from("calificaciones")
+    .upsert(
+      { publicacion_id: postId, usuario_id: usuarioActual.id, estrellas: valor },
+      { onConflict: "publicacion_id,usuario_id" }
+    );
+  if (error) return console.error(error);
+  refrescarTarjeta(postId);
+}
+
+async function comentar(postId, input) {
+  const contenido = input.value.trim();
+  if (!contenido) return;
+  input.disabled = true;
+  const { error } = await db
+    .from("comentarios")
+    .insert({ publicacion_id: postId, usuario_id: usuarioActual.id, contenido });
+  input.disabled = false;
+  if (error) return console.error(error);
+  input.value = "";
+  await refrescarTarjeta(postId);
+  input.focus();
+}
+
+async function publicar(e) {
+  e.preventDefault();
+  const titulo = $pubTitulo.value.trim();
+  const youtubeId = extraerYoutubeId($pubUrl.value);
+  $pubMsg.textContent = "";
+
+  if (!titulo) return ($pubMsg.textContent = "Escribe un título.");
+  if (!youtubeId) return ($pubMsg.textContent = "Ese enlace no parece un video válido de YouTube.");
+
+  const boton = $formPublicar.querySelector("button");
+  boton.disabled = true;
+  const { data, error } = await db
+    .from("publicaciones")
+    .insert({
+      usuario_id: usuarioActual.id,
+      titulo,
+      url_youtube: $pubUrl.value.trim(),
+      youtube_id: youtubeId,
+    })
+    .select("id")
+    .single();
+  boton.disabled = false;
+
+  if (error) return ($pubMsg.textContent = "No se pudo publicar. Intenta de nuevo.");
+
+  $formPublicar.reset();
+  $feed.prepend(crearTarjeta(await obtenerPost(data.id)));
+  $estado.textContent = "";
+}
+
+/* ---------- Eventos (delegación) ---------- */
+$feed.addEventListener("click", (e) => {
+  const card = e.target.closest(".card");
+  if (!card) return;
+
+  const estrella = e.target.closest(".star");
+  if (estrella) return calificar(card.dataset.id, Number(estrella.dataset.valor));
+
+  const toggle = e.target.closest(".toggle-comentarios");
+  if (toggle) {
+    const panel = card.querySelector(".comentarios");
+    panel.hidden = !panel.hidden;
+    toggle.setAttribute("aria-expanded", String(!panel.hidden));
+  }
+});
+
+$feed.addEventListener("submit", (e) => {
+  if (!e.target.matches(".form-comentario")) return;
+  e.preventDefault();
+  comentar(e.target.closest(".card").dataset.id, e.target.querySelector("input"));
+});
+
+// Vista previa al pasar el cursor sobre las estrellas
+function previsualizar(contenedor, hasta) {
+  contenedor.querySelectorAll(".star").forEach((s) => s.classList.toggle("on", Number(s.dataset.valor) <= hasta));
+}
+$feed.addEventListener("mouseover", (e) => {
+  const estrella = e.target.closest(".star");
+  if (estrella) previsualizar(estrella.parentElement, Number(estrella.dataset.valor));
+});
+$feed.addEventListener("mouseout", (e) => {
+  const estrella = e.target.closest(".star");
+  if (estrella) previsualizar(estrella.parentElement, Number(estrella.parentElement.dataset.lleno));
+});
+
+$formPublicar.addEventListener("submit", publicar);
+
+/* ---------- API para auth.js ---------- */
+function iniciarFeed() { cargarFeed(); }
+function limpiarFeed() { $feed.replaceChildren(); $estado.textContent = ""; }

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Ritmo · Comparte tu música</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ========== LOGIN / REGISTRO ========== -->
+  <main id="vista-auth" class="auth">
+    <section class="auth-card">
+      <img src="logo.png" alt="Logo" class="auth-logo" onerror="this.style.display='none'">
+      <h1 id="auth-titulo">Inicia sesión</h1>
+      <p class="auth-sub">Comparte y descubre música con la comunidad.</p>
+
+      <form id="form-auth" novalidate>
+        <div id="campos-registro" hidden>
+          <label for="auth-nombre">Nombre</label>
+          <input id="auth-nombre" type="text" autocomplete="nickname" maxlength="40" placeholder="Tu nombre público">
+          <label for="auth-avatar">Foto de perfil (URL, opcional)</label>
+          <input id="auth-avatar" type="url" placeholder="https://...">
+        </div>
+
+        <label for="auth-email">Correo electrónico</label>
+        <input id="auth-email" type="email" autocomplete="email" required placeholder="tucorreo@ejemplo.com">
+
+        <label for="auth-pass">Contraseña</label>
+        <input id="auth-pass" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres">
+
+        <p id="auth-msg" class="msg" role="alert" aria-live="polite"></p>
+        <button id="auth-submit" class="btn btn-primario" type="submit">Entrar</button>
+      </form>
+
+      <button id="auth-toggle" class="btn-link" type="button">¿No tienes cuenta? Regístrate</button>
+    </section>
+  </main>
+
+  <!-- ========== APLICACIÓN ========== -->
+  <div id="vista-app" hidden>
+    <nav class="navbar">
+      <a class="brand" href="#">
+        <img src="logo.png" alt="Logo" class="brand-logo" onerror="this.style.display='none'">
+        <span>Ritmo</span>
+      </a>
+      <div class="nav-user">
+        <span id="nav-nombre" class="nav-nombre"></span>
+        <span id="nav-avatar"></span>
+        <button id="btn-salir" class="btn btn-fantasma" type="button">Salir</button>
+      </div>
+    </nav>
+
+    <main class="contenedor">
+      <form id="form-publicar" class="publicar" novalidate>
+        <h2>Comparte una canción o video</h2>
+        <input id="pub-titulo" type="text" maxlength="120" placeholder="Título (ej. Gustavo Cerati – Crimen)" required>
+        <input id="pub-url" type="url" placeholder="Enlace de YouTube" required>
+        <p id="pub-msg" class="msg" role="alert" aria-live="polite"></p>
+        <button class="btn btn-primario" type="submit">Publicar</button>
+      </form>
+
+      <section id="feed" class="feed" aria-live="polite"></section>
+      <p id="feed-estado" class="feed-estado"></p>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/feed.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>
